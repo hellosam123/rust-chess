@@ -116,7 +116,7 @@ impl TryFrom<usize> for Piece {
 }
 
 impl Piece {
-    pub fn from_char(c: char) -> Result<Self, &'static str> {
+    pub const fn from_char(c: char) -> Result<Self, &'static str> {
         let piece = match c {
             'P' => Piece::WhitePawn,
             'N' => Piece::WhiteKnight,
@@ -138,7 +138,7 @@ impl Piece {
         Ok(piece)
     }
 
-    pub fn to_char(piece: Piece) -> char {
+    pub const fn to_char(piece: Piece) -> char {
         match piece {
             Piece::WhitePawn => 'P',
             Piece::WhiteKnight => 'N',
@@ -156,7 +156,7 @@ impl Piece {
         }
     }
 
-    pub fn get_phase_value(piece: Piece) -> u8 {
+    pub const fn get_phase_value(piece: Piece) -> u8 {
         match piece {
             Piece::WhitePawn | Piece::BlackPawn | Piece::WhiteKing | Piece::BlackKing => 0,
             Piece::WhiteKnight | Piece::BlackKnight | Piece::WhiteBishop | Piece::BlackBishop => 1,
@@ -172,15 +172,15 @@ impl CastlingRights {
     pub const BLACK_KINGSIDE: u8 = 1 << 2;
     pub const BLACK_QUEENSIDE: u8 = 1 << 3;
 
-    pub fn has(&self, mask: u8) -> bool {
+    pub const fn has(&self, mask: u8) -> bool {
         self.0 & mask != 0
     }
 
-    pub fn put(&mut self, mask: u8) {
+    pub const fn put(&mut self, mask: u8) {
         self.0 |= mask;
     }
 
-    pub fn remove(&mut self, mask: u8) {
+    pub const fn remove(&mut self, mask: u8) {
         self.0 &= !mask;
     }
 }
@@ -216,27 +216,27 @@ impl Board {
         *self = Self::new();
     }
 
-    fn set_piece_bit(&mut self, piece: Piece, square: u8) {
+    const fn set_piece_bit(&mut self, piece: Piece, square: u8) {
         self.pieces[piece as usize] |= 1u64 << square;
     }
 
-    pub fn put_piece(&mut self, piece: Piece, square: u8) {
+    pub const fn put_piece(&mut self, piece: Piece, square: u8) {
         self.set_piece_bit(piece, square);
         self.mailbox[square as usize] = Some(piece);
         self.hash_key ^= ZOBRIST.piece_square[piece as usize][square as usize];
     }
 
-    fn clear_piece_bit(&mut self, piece: Piece, square: u8) {
+    const fn clear_piece_bit(&mut self, piece: Piece, square: u8) {
         self.pieces[piece as usize] &= !(1 << square);
     }
 
-    pub fn remove_piece(&mut self, piece: Piece, square: u8) {
+    pub const fn remove_piece(&mut self, piece: Piece, square: u8) {
         self.clear_piece_bit(piece, square);
         self.mailbox[square as usize] = None;
         self.hash_key ^= ZOBRIST.piece_square[piece as usize][square as usize];
     }
 
-    pub fn get_piece(&self, square: u8) -> Option<Piece> {
+    pub const fn get_piece(&self, square: u8) -> Option<Piece> {
         self.mailbox[square as usize]
     }
 
