@@ -1,4 +1,17 @@
 use crate::zobrist::ZOBRIST;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+#[rustfmt::skip]
+pub enum Square {
+    A1 = 0, B1, C1, D1, E1, F1, G1, H1,
+    A2, B2, C2, D2, E2, F2, G2, H2,
+    A3, B3, C3, D3, E3, F3, G3, H3,
+    A4, B4, C4, D4, E4, F4, G4, H4,
+    A5, B5, C5, D5, E5, F5, G5, H5,
+    A6, B6, C6, D6, E6, F6, G6, H6,
+    A7, B7, C7, D7, E7, F7, G7, H7,
+    A8, B8, C8, D8, E8, F8, G8, H8 = 63,
+}
 
 #[derive(Debug)]
 pub struct Board {
@@ -142,6 +155,15 @@ impl Piece {
             Piece::BlackKing => 'k',
         }
     }
+
+    pub fn get_phase_value(piece: Piece) -> u8 {
+        match piece {
+            Piece::WhitePawn | Piece::BlackPawn | Piece::WhiteKing | Piece::BlackKing => 0,
+            Piece::WhiteKnight | Piece::BlackKnight | Piece::WhiteBishop | Piece::BlackBishop => 1,
+            Piece::WhiteRook | Piece::BlackRook => 2,
+            Piece::WhiteQueen | Piece::BlackQueen => 4,
+        }
+    }
 }
 
 impl CastlingRights {
@@ -236,6 +258,27 @@ impl Board {
         }
         println!("  +-----------------+");
         println!("    a b c d e f g h");
+    }
+
+    fn generate_phase_value(&self) -> u8 {
+        let phase_value_pieces = [
+            Piece::WhiteKnight,
+            Piece::WhiteBishop,
+            Piece::WhiteRook,
+            Piece::WhiteQueen,
+            Piece::BlackKnight,
+            Piece::BlackBishop,
+            Piece::BlackRook,
+            Piece::BlackQueen,
+        ];
+
+        let mut phase_value = 0;
+        for piece in phase_value_pieces {
+            phase_value +=
+                self.pieces[piece as usize].count_ones() as u8 * Piece::get_phase_value(piece);
+        }
+
+        phase_value
     }
 
     fn generate_hash_key(&self) -> u64 {
@@ -343,7 +386,7 @@ impl Board {
             let square = str_to_square(en_passant_square)?;
 
             // 16-23 and 40-47 are the equivalent of the 3rd and 6th ranks
-            if !((16..=23).contains(&square) || (40..=47).contains(&square)) {
+            if !(matches!(square, 16..=23) || matches!(square, 40..=47)) {
                 return Err("invalid fen en passant square");
             }
 
@@ -355,6 +398,7 @@ impl Board {
         let mailbox = self.generate_mailbox()?;
         self.mailbox = mailbox;
         self.hash_key = self.generate_hash_key();
+        self.phase_value = self.generate_phase_value();
 
         Ok(())
     }
