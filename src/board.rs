@@ -30,6 +30,10 @@ pub struct Board {
     /// Zobrist hash key for current position
     pub hash_key: u64,
 
+    pub white_pieces: u64,
+    pub black_pieces: u64,
+    pub all_pieces: u64,
+
     pub en_passant_square: Option<u8>,
     pub half_move_clock: u8,
 
@@ -192,6 +196,9 @@ impl Default for Board {
             mailbox: [None; 64],
             history: Vec::with_capacity(512),
             hash_key: 0,
+            white_pieces: 0,
+            black_pieces: 0,
+            all_pieces: 0,
             en_passant_square: None,
             half_move_clock: 0,
             active_color: Color::White,
@@ -216,28 +223,46 @@ impl Board {
         *self = Self::new();
     }
 
-    const fn set_piece_bit(&mut self, piece: Piece, square: u8) {
+    fn set_piece_bit(&mut self, piece: Piece, square: u8) {
         self.pieces[piece as usize] |= 1u64 << square;
     }
 
-    pub const fn put_piece(&mut self, piece: Piece, square: u8) {
+    pub fn put_piece(&mut self, piece: Piece, square: u8) {
         self.set_piece_bit(piece, square);
         self.mailbox[square as usize] = Some(piece);
         self.hash_key ^= ZOBRIST.piece_square[piece as usize][square as usize];
     }
 
-    const fn clear_piece_bit(&mut self, piece: Piece, square: u8) {
+    fn clear_piece_bit(&mut self, piece: Piece, square: u8) {
         self.pieces[piece as usize] &= !(1 << square);
     }
 
-    pub const fn remove_piece(&mut self, piece: Piece, square: u8) {
+    pub fn remove_piece(&mut self, piece: Piece, square: u8) {
         self.clear_piece_bit(piece, square);
         self.mailbox[square as usize] = None;
         self.hash_key ^= ZOBRIST.piece_square[piece as usize][square as usize];
     }
 
-    pub const fn get_piece(&self, square: u8) -> Option<Piece> {
+    pub fn get_piece(&self, square: u8) -> Option<Piece> {
         self.mailbox[square as usize]
+    }
+
+    pub fn set_general_bitboards(&mut self) {
+        self.white_pieces = self.pieces[Piece::WhitePawn as usize]
+            | self.pieces[Piece::WhiteKnight as usize]
+            | self.pieces[Piece::WhiteBishop as usize]
+            | self.pieces[Piece::WhiteRook as usize]
+            | self.pieces[Piece::WhiteQueen as usize]
+            | self.pieces[Piece::WhiteKing as usize];
+
+        self.black_pieces = self.pieces[Piece::BlackPawn as usize]
+            | self.pieces[Piece::BlackKnight as usize]
+            | self.pieces[Piece::BlackBishop as usize]
+            | self.pieces[Piece::BlackRook as usize]
+            | self.pieces[Piece::BlackQueen as usize]
+            | self.pieces[Piece::BlackKing as usize];
+
+        self.all_pieces = self.white_pieces | self.black_pieces;
     }
 
     pub fn print_board(&self) {
@@ -399,6 +424,8 @@ impl Board {
         self.mailbox = mailbox;
         self.hash_key = self.generate_hash_key();
         self.phase_value = self.generate_phase_value();
+
+        self.set_general_bitboards();
 
         Ok(())
     }
