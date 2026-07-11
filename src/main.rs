@@ -1,6 +1,7 @@
 mod board;
 mod evaluate;
 mod movegen;
+mod mv;
 mod search;
 mod zobrist;
 
