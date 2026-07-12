@@ -93,6 +93,18 @@ fn str_to_square(s: &str) -> Result<u8, &'static str> {
     Ok(rank * 8 + file)
 }
 
+impl PartialEq<u8> for Square {
+    fn eq(&self, other: &u8) -> bool {
+        *self as u8 == *other
+    }
+}
+
+impl PartialEq<Square> for u8 {
+    fn eq(&self, other: &Square) -> bool {
+        *self == *other as u8
+    }
+}
+
 impl TryFrom<usize> for Piece {
     type Error = &'static str;
 
@@ -428,5 +440,9 @@ impl Board {
         self.set_general_bitboards();
 
         Ok(())
+    }
+
+    pub fn is_square_attacked_by(&self, square: u8, color: Color, king_xray: bool) -> bool {
+        todo!()
     }
 }

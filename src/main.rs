@@ -1,5 +1,7 @@
+mod bitboard;
 mod board;
 mod evaluate;
+mod magic_bitboard;
 mod movegen;
 mod mv;
 mod search;
