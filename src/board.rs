@@ -1,4 +1,11 @@
-use crate::zobrist::ZOBRIST;
+use crate::{
+    attacks,
+    bitboard::{self, CASTLING_PERMUTATIONS},
+    magic_bitboard,
+    mv::{Move, MoveFlag},
+    zobrist::ZOBRIST,
+};
+use std::ops::Not;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 #[rustfmt::skip]
@@ -13,6 +20,8 @@ pub enum Square {
     A8, B8, C8, D8, E8, F8, G8, H8 = 63,
 }
 
+const HISTORY_SIZE: usize = 1024;
+
 #[derive(Debug)]
 pub struct Board {
     /// Bitboards divided by Piece
@@ -25,7 +34,8 @@ pub struct Board {
     pub mailbox: [Option<Piece>; 64],
 
     /// History of zobrist hash keys
-    pub history: Vec<u64>,
+    pub history: [u64; HISTORY_SIZE],
+    pub history_ply: usize,
 
     /// Zobrist hash key for current position
     pub hash_key: u64,
@@ -43,7 +53,14 @@ pub struct Board {
     pub active_color: Color,
 }
 
-#[derive(Debug)]
+pub struct UnMove {
+    captured_piece: Option<Piece>,
+    castling_rights: CastlingRights,
+    en_passant_square: Option<u8>,
+    half_move_clock: u8,
+}
+
+#[derive(Debug, Clone, Copy)]
 pub struct CastlingRights(pub u8);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -132,6 +149,13 @@ impl TryFrom<usize> for Piece {
 }
 
 impl Piece {
+    const PAWN_PHASE_VALUE: u8 = 0;
+    const KNIGHT_PHASE_VALUE: u8 = 1;
+    const BISHOP_PHASE_VALUE: u8 = 1;
+    const ROOK_PHASE_VALUE: u8 = 2;
+    const QUEEN_PHASE_VALUE: u8 = 4;
+    const KING_PHASE_VALUE: u8 = 0;
+
     pub const fn from_char(c: char) -> Result<Self, &'static str> {
         let piece = match c {
             'P' => Piece::WhitePawn,
@@ -174,10 +198,23 @@ impl Piece {
 
     pub const fn get_phase_value(piece: Piece) -> u8 {
         match piece {
-            Piece::WhitePawn | Piece::BlackPawn | Piece::WhiteKing | Piece::BlackKing => 0,
-            Piece::WhiteKnight | Piece::BlackKnight | Piece::WhiteBishop | Piece::BlackBishop => 1,
-            Piece::WhiteRook | Piece::BlackRook => 2,
-            Piece::WhiteQueen | Piece::BlackQueen => 4,
+            Piece::WhitePawn | Piece::BlackPawn => Self::PAWN_PHASE_VALUE,
+            Piece::WhiteKnight | Piece::BlackKnight => Self::KNIGHT_PHASE_VALUE,
+            Piece::WhiteBishop | Piece::BlackBishop => Self::BISHOP_PHASE_VALUE,
+            Piece::WhiteRook | Piece::BlackRook => Self::ROOK_PHASE_VALUE,
+            Piece::WhiteQueen | Piece::BlackQueen => Self::QUEEN_PHASE_VALUE,
+            Piece::WhiteKing | Piece::BlackKing => Self::KING_PHASE_VALUE,
+        }
+    }
+}
+
+impl Not for Color {
+    type Output = Self;
+
+    fn not(self) -> Self::Output {
+        match self {
+            Color::White => Color::Black,
+            Color::Black => Color::White,
         }
     }
 }
@@ -206,7 +243,8 @@ impl Default for Board {
         Self {
             pieces: [0; 12],
             mailbox: [None; 64],
-            history: Vec::with_capacity(512),
+            history: [0; 1024],
+            history_ply: 0,
             hash_key: 0,
             white_pieces: 0,
             black_pieces: 0,
@@ -239,7 +277,7 @@ impl Board {
         self.pieces[piece as usize] |= 1u64 << square;
     }
 
-    pub fn put_piece(&mut self, piece: Piece, square: u8) {
+    fn put_piece(&mut self, piece: Piece, square: u8) {
         self.set_piece_bit(piece, square);
         self.mailbox[square as usize] = Some(piece);
         self.hash_key ^= ZOBRIST.piece_square[piece as usize][square as usize];
@@ -249,17 +287,17 @@ impl Board {
         self.pieces[piece as usize] &= !(1 << square);
     }
 
-    pub fn remove_piece(&mut self, piece: Piece, square: u8) {
+    fn remove_piece(&mut self, piece: Piece, square: u8) {
         self.clear_piece_bit(piece, square);
         self.mailbox[square as usize] = None;
         self.hash_key ^= ZOBRIST.piece_square[piece as usize][square as usize];
     }
 
-    pub fn get_piece(&self, square: u8) -> Option<Piece> {
+    fn get_piece(&self, square: u8) -> Option<Piece> {
         self.mailbox[square as usize]
     }
 
-    pub fn set_general_bitboards(&mut self) {
+    fn set_general_bitboards(&mut self) {
         self.white_pieces = self.pieces[Piece::WhitePawn as usize]
             | self.pieces[Piece::WhiteKnight as usize]
             | self.pieces[Piece::WhiteBishop as usize]
@@ -442,7 +480,378 @@ impl Board {
         Ok(())
     }
 
-    pub fn is_square_attacked_by(&self, square: u8, color: Color, king_xray: bool) -> bool {
-        todo!()
+    fn push_history(&mut self) {
+        self.history[self.history_ply % HISTORY_SIZE] = self.hash_key;
+        self.history_ply += 1;
+    }
+
+    fn pop_history(&mut self) -> u64 {
+        self.history_ply -= 1;
+        self.history[self.history_ply % HISTORY_SIZE]
+    }
+
+    pub fn is_square_attacked_by(
+        &self,
+        square: u8,
+        attacking_color: Color,
+        king_xray: bool,
+    ) -> bool {
+        let mut occupancy = self.all_pieces;
+
+        let attacking_pawns: u64;
+        let attacking_knights: u64;
+        let attacking_bishops: u64;
+        let attacking_rooks: u64;
+        let attacking_queens: u64;
+        let attacking_king: u64;
+
+        if attacking_color == Color::White {
+            attacking_pawns = self.pieces[Piece::WhitePawn as usize];
+            attacking_knights = self.pieces[Piece::WhiteKnight as usize];
+            attacking_bishops = self.pieces[Piece::WhiteBishop as usize];
+            attacking_rooks = self.pieces[Piece::WhiteRook as usize];
+            attacking_queens = self.pieces[Piece::WhiteQueen as usize];
+            attacking_king = self.pieces[Piece::WhiteKing as usize];
+        } else {
+            attacking_pawns = self.pieces[Piece::BlackPawn as usize];
+            attacking_knights = self.pieces[Piece::BlackKnight as usize];
+            attacking_bishops = self.pieces[Piece::BlackBishop as usize];
+            attacking_rooks = self.pieces[Piece::BlackRook as usize];
+            attacking_queens = self.pieces[Piece::BlackQueen as usize];
+            attacking_king = self.pieces[Piece::BlackKing as usize];
+        }
+        if king_xray {
+            let defending_king = if attacking_color == Color::White {
+                self.pieces[Piece::BlackKing as usize]
+            } else {
+                self.pieces[Piece::WhiteKing as usize]
+            };
+            occupancy &= !defending_king;
+        }
+        if attacks::KNIGHT_ATTACKS[square as usize] & attacking_knights != 0 {
+            return true;
+        }
+
+        if attacks::KING_ATTACKS[square as usize] & attacking_king != 0 {
+            return true;
+        }
+
+        if attacking_color == Color::White {
+            if attacks::BLACK_PAWN_ATTACKS[square as usize] & attacking_pawns != 0 {
+                return true;
+            }
+        } else {
+            if attacks::WHITE_PAWN_ATTACKS[square as usize] & attacking_pawns != 0 {
+                return true;
+            }
+        }
+
+        let bishop_attacks = magic_bitboard::get_bishop_attacks_mask(occupancy, square);
+        if bishop_attacks & (attacking_bishops | attacking_queens) != 0 {
+            return true;
+        }
+
+        let rook_attacks = magic_bitboard::get_rook_attacks_mask(occupancy, square);
+        if rook_attacks & (attacking_rooks | attacking_queens) != 0 {
+            return true;
+        }
+
+        false
+    }
+
+    pub fn make_move(&mut self, mv: Move, check_legality: bool) -> (bool, UnMove) {
+        let mut unmove = UnMove {
+            captured_piece: None,
+            castling_rights: self.castling_rights,
+            en_passant_square: self.en_passant_square,
+            half_move_clock: self.half_move_clock,
+        };
+
+        let mut is_legal = true;
+
+        self.push_history();
+
+        if let Some(en_passant_square) = self.en_passant_square {
+            self.hash_key ^= ZOBRIST.en_passant[en_passant_square as usize % 8];
+            self.en_passant_square = None;
+        }
+
+        let from = mv.get_from();
+        let to = mv.get_to();
+        let flag = mv.get_flag();
+
+        match flag {
+            MoveFlag::DoublePawnPush => {
+                let en_passant_square = if self.active_color == Color::White {
+                    to - 8
+                } else {
+                    to + 8
+                };
+                self.en_passant_square = Some(en_passant_square);
+                self.hash_key ^= ZOBRIST.en_passant[en_passant_square as usize % 8];
+            }
+            MoveFlag::KingCastle => {
+                if self.active_color == Color::White {
+                    self.remove_piece(Piece::WhiteRook, Square::H1 as u8);
+                    self.put_piece(Piece::WhiteRook, Square::F1 as u8);
+
+                    if check_legality
+                        && (self.is_square_attacked_by(Square::E1 as u8, Color::Black, true)
+                            || self.is_square_attacked_by(Square::F1 as u8, Color::Black, true))
+                    {
+                        is_legal = false;
+                    }
+                } else {
+                    self.remove_piece(Piece::BlackRook, Square::H8 as u8);
+                    self.put_piece(Piece::BlackRook, Square::F8 as u8);
+
+                    if check_legality
+                        && (self.is_square_attacked_by(Square::E8 as u8, Color::White, true)
+                            || self.is_square_attacked_by(Square::F8 as u8, Color::White, true))
+                    {
+                        is_legal = false;
+                    }
+                }
+            }
+            MoveFlag::QueenCastle => {
+                if self.active_color == Color::White {
+                    self.remove_piece(Piece::WhiteRook, Square::A1 as u8);
+                    self.put_piece(Piece::WhiteRook, Square::C1 as u8);
+
+                    if check_legality
+                        && (self.is_square_attacked_by(Square::E1 as u8, Color::Black, true)
+                            || self.is_square_attacked_by(Square::D1 as u8, Color::Black, true))
+                    {
+                        is_legal = false;
+                    }
+                } else {
+                    self.remove_piece(Piece::BlackRook, Square::A8 as u8);
+                    self.put_piece(Piece::BlackRook, Square::C8 as u8);
+
+                    if check_legality
+                        && (self.is_square_attacked_by(Square::E8 as u8, Color::White, true)
+                            || self.is_square_attacked_by(Square::D8 as u8, Color::White, true))
+                    {
+                        is_legal = false;
+                    }
+                }
+            }
+            MoveFlag::EnPassant => {
+                if self.active_color == Color::White {
+                    if let Some(captured_pawn) = self.get_piece(to - 8)
+                        && captured_pawn == Piece::BlackPawn
+                    {
+                        self.remove_piece(Piece::BlackPawn, to - 8);
+                        unmove.captured_piece = Some(Piece::BlackPawn);
+                    }
+                } else {
+                    if let Some(captured_pawn) = self.get_piece(to + 8)
+                        && captured_pawn == Piece::WhitePawn
+                    {
+                        self.remove_piece(Piece::WhitePawn, to + 8);
+                        unmove.captured_piece = Some(Piece::WhitePawn);
+                    }
+                }
+            }
+            _ => {}
+        }
+
+        if mv.is_capture()
+            && flag != MoveFlag::EnPassant
+            && let Some(captured_piece) = self.get_piece(to)
+        {
+            self.remove_piece(captured_piece, to);
+            unmove.captured_piece = Some(captured_piece);
+
+            self.phase_value -= Piece::get_phase_value(captured_piece);
+        }
+
+        if let Some(move_piece) = self.get_piece(from) {
+            self.remove_piece(move_piece, from);
+
+            if !mv.is_promotion() {
+                self.put_piece(move_piece, to);
+            } else {
+                match flag {
+                    MoveFlag::PromoteN | MoveFlag::PromoteCaptureN => {
+                        if self.active_color == Color::White {
+                            self.put_piece(Piece::WhiteKnight, to);
+                        } else {
+                            self.put_piece(Piece::BlackKnight, to);
+                        }
+
+                        self.phase_value += Piece::KNIGHT_PHASE_VALUE;
+                    }
+                    MoveFlag::PromoteB | MoveFlag::PromoteCaptureB => {
+                        if self.active_color == Color::White {
+                            self.put_piece(Piece::WhiteBishop, to);
+                        } else {
+                            self.put_piece(Piece::BlackBishop, to);
+                        }
+
+                        self.phase_value += Piece::BISHOP_PHASE_VALUE;
+                    }
+                    MoveFlag::PromoteR | MoveFlag::PromoteCaptureR => {
+                        if self.active_color == Color::White {
+                            self.put_piece(Piece::WhiteRook, to);
+                        } else {
+                            self.put_piece(Piece::BlackRook, to);
+                        }
+
+                        self.phase_value += Piece::ROOK_PHASE_VALUE;
+                    }
+                    MoveFlag::PromoteQ | MoveFlag::PromoteCaptureQ => {
+                        if self.active_color == Color::White {
+                            self.put_piece(Piece::WhiteQueen, to);
+                        } else {
+                            self.put_piece(Piece::BlackQueen, to);
+                        }
+
+                        self.phase_value += Piece::QUEEN_PHASE_VALUE;
+                    }
+                    _ => {}
+                }
+            }
+
+            self.hash_key ^= ZOBRIST.castling_rights[self.castling_rights.0 as usize];
+            self.castling_rights.0 &= CASTLING_PERMUTATIONS[from as usize];
+            self.castling_rights.0 &= CASTLING_PERMUTATIONS[to as usize];
+            self.hash_key ^= ZOBRIST.castling_rights[self.castling_rights.0 as usize];
+
+            if move_piece == Piece::WhitePawn || move_piece == Piece::BlackPawn || mv.is_capture() {
+                self.half_move_clock = 0;
+            } else {
+                self.half_move_clock += 1;
+            }
+        }
+
+        if check_legality && is_legal {
+            if self.active_color == Color::White
+                && self.is_square_attacked_by(
+                    self.pieces[Piece::WhiteKing as usize].trailing_zeros() as u8,
+                    Color::Black,
+                    false,
+                )
+            {
+                is_legal = false;
+            }
+
+            if self.active_color == Color::Black
+                && self.is_square_attacked_by(
+                    self.pieces[Piece::BlackKing as usize].trailing_zeros() as u8,
+                    Color::White,
+                    false,
+                )
+            {
+                is_legal = false;
+            }
+        }
+
+        self.active_color = !self.active_color;
+        self.hash_key ^= ZOBRIST.active_color;
+
+        (is_legal, unmove)
+    }
+
+    fn unmake_move(&mut self, mv: Move, unmove: UnMove) {
+        self.castling_rights = unmove.castling_rights;
+        self.en_passant_square = unmove.en_passant_square;
+        self.half_move_clock = unmove.half_move_clock;
+
+        self.active_color = !self.active_color;
+        self.hash_key = self.pop_history();
+
+        let from = mv.get_from();
+        let to = mv.get_to();
+        let flag = mv.get_flag();
+
+        if let Some(move_piece) = self.get_piece(to) {
+            if !mv.is_promotion() {
+                self.put_piece(move_piece, from);
+                self.remove_piece(move_piece, to);
+            } else {
+                if self.active_color == Color::White {
+                    self.put_piece(Piece::WhitePawn, from);
+                } else {
+                    self.put_piece(Piece::BlackPawn, from);
+                }
+                match flag {
+                    MoveFlag::PromoteN | MoveFlag::PromoteCaptureN => {
+                        if self.active_color == Color::White {
+                            self.remove_piece(Piece::WhiteKnight, to);
+                        } else {
+                            self.remove_piece(Piece::BlackKnight, to);
+                        }
+
+                        self.phase_value -= Piece::KNIGHT_PHASE_VALUE;
+                    }
+                    MoveFlag::PromoteB | MoveFlag::PromoteCaptureB => {
+                        if self.active_color == Color::White {
+                            self.remove_piece(Piece::WhiteBishop, to);
+                        } else {
+                            self.remove_piece(Piece::BlackBishop, to);
+                        }
+
+                        self.phase_value -= Piece::BISHOP_PHASE_VALUE;
+                    }
+                    MoveFlag::PromoteR | MoveFlag::PromoteCaptureR => {
+                        if self.active_color == Color::White {
+                            self.remove_piece(Piece::WhiteRook, to);
+                        } else {
+                            self.remove_piece(Piece::BlackRook, to);
+                        }
+
+                        self.phase_value -= Piece::ROOK_PHASE_VALUE;
+                    }
+                    MoveFlag::PromoteQ | MoveFlag::PromoteCaptureQ => {
+                        if self.active_color == Color::White {
+                            self.remove_piece(Piece::WhiteQueen, to);
+                        } else {
+                            self.remove_piece(Piece::BlackQueen, to);
+                        }
+
+                        self.phase_value -= Piece::QUEEN_PHASE_VALUE;
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        if mv.is_capture()
+            && flag != MoveFlag::EnPassant
+            && let Some(captured_piece) = unmove.captured_piece
+        {
+            self.put_piece(captured_piece, to);
+            self.phase_value += Piece::get_phase_value(captured_piece);
+        }
+
+        match flag {
+            MoveFlag::KingCastle => {
+                if self.active_color == Color::White {
+                    self.remove_piece(Piece::WhiteRook, Square::F1 as u8);
+                    self.put_piece(Piece::WhiteRook, Square::H1 as u8);
+                } else {
+                    self.remove_piece(Piece::BlackRook, Square::F8 as u8);
+                    self.put_piece(Piece::BlackRook, Square::H8 as u8);
+                }
+            }
+            MoveFlag::QueenCastle => {
+                if self.active_color == Color::White {
+                    self.remove_piece(Piece::WhiteRook, Square::C1 as u8);
+                    self.put_piece(Piece::WhiteRook, Square::A1 as u8);
+                } else {
+                    self.remove_piece(Piece::BlackRook, Square::C8 as u8);
+                    self.put_piece(Piece::BlackRook, Square::A8 as u8);
+                }
+            }
+            MoveFlag::EnPassant => {
+                if self.active_color == Color::White {
+                    self.put_piece(Piece::BlackPawn, to - 8);
+                } else {
+                    self.put_piece(Piece::WhitePawn, to + 8);
+                }
+            }
+            _ => {}
+        }
     }
 }

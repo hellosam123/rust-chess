@@ -299,7 +299,7 @@ const fn create_blocker_permutation(mask: u64, index: usize) -> u64 {
 }
 
 #[inline(always)]
-pub fn get_bishop_attacks_mask(occupancy: u64, from: u8) -> u64 {
+pub const fn get_bishop_attacks_mask(occupancy: u64, from: u8) -> u64 {
     let entry = BISHOP_MAGICS[from as usize];
     let blockers = entry.mask & occupancy;
     let hash_index = blockers.wrapping_mul(entry.magic) >> entry.shift;
@@ -309,7 +309,7 @@ pub fn get_bishop_attacks_mask(occupancy: u64, from: u8) -> u64 {
 }
 
 #[inline(always)]
-pub fn get_rook_attacks_mask(occupancy: u64, from: u8) -> u64 {
+pub const fn get_rook_attacks_mask(occupancy: u64, from: u8) -> u64 {
     let entry = ROOK_MAGICS[from as usize];
     let blockers = entry.mask & occupancy;
     let hash_index = blockers.wrapping_mul(entry.magic) >> entry.shift;
