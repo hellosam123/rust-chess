@@ -1,5 +1,6 @@
 pub struct Move(u16);
 
+#[derive(Debug, PartialEq, Eq)]
 pub enum MoveFlag {
     QuietMove = 0b0000,
     DoublePawnPush = 0b0001,
@@ -17,11 +18,30 @@ pub enum MoveFlag {
     PromoteCaptureQ = 0b1111,
 }
 
-impl TryFrom<usize> for MoveFlag {
-    type Error = &'static str;
+impl Move {
+    const FROM_MASK: u16 = 0x3F; // 0000 0000 0011 1111 (bits 0-5)
+    const TO_MASK: u16 = 0xFC0; // 0000 1111 1100 0000 (bits 6-11)
+    const FLAG_MASK: u16 = 0xF000; // 1111 0000 0000 0000 (bits 12-15)
 
-    fn try_from(value: usize) -> Result<Self, Self::Error> {
-        let move_flag = match value {
+    #[inline(always)]
+    pub fn new(from: u8, to: u8, flag: MoveFlag) -> Self {
+        Move((from | to << 6 | (flag as u8) << 12) as u16)
+    }
+
+    #[inline(always)]
+    pub fn get_from(&self) -> u8 {
+        (self.0 & Self::FROM_MASK) as u8
+    }
+
+    #[inline(always)]
+    pub fn get_to(&self) -> u8 {
+        ((self.0 & Self::TO_MASK) >> 6) as u8
+    }
+
+    #[inline(always)]
+    pub fn get_flag(&self) -> MoveFlag {
+        let flag_index = ((self.0 & Self::FLAG_MASK) >> 12) as usize;
+        match flag_index {
             0b0000 => MoveFlag::QuietMove,
             0b0001 => MoveFlag::DoublePawnPush,
             0b0010 => MoveFlag::KingCastle,
@@ -37,40 +57,16 @@ impl TryFrom<usize> for MoveFlag {
             0b1110 => MoveFlag::PromoteCaptureR,
             0b1111 => MoveFlag::PromoteCaptureQ,
 
-            _ => return Err("index out of bounds for MoveFlag enum"),
-        };
-
-        Ok(move_flag)
-    }
-}
-
-impl Move {
-    const FROM_MASK: u16 = 0x3F; // 0000 0000 0011 1111 (bits 0-5)
-    const TO_MASK: u16 = 0xFC0; // 0000 1111 1100 0000 (bits 6-11)
-    const FLAG_MASK: u16 = 0xF000; // 1111 0000 0000 0000 (bits 12-15)
-
-    pub fn new(from: u8, to: u8, flag: MoveFlag) -> Self {
-        Move((from | to << 6 | (flag as u8) << 12) as u16)
+            _ => unsafe { std::hint::unreachable_unchecked() },
+        }
     }
 
-    pub fn get_from(&self) -> u8 {
-        (self.0 & Self::FROM_MASK) as u8
-    }
-
-    pub fn get_to(&self) -> u8 {
-        ((self.0 & Self::TO_MASK) >> 6) as u8
-    }
-
-    pub fn get_flag(&self) -> Result<MoveFlag, &'static str> {
-        let flag_index = ((self.0 & Self::FLAG_MASK) >> 12) as usize;
-        let move_flag = MoveFlag::try_from(flag_index)?;
-        Ok(move_flag)
-    }
-
+    #[inline(always)]
     pub fn is_capture(&self) -> bool {
         self.0 & 4 << 12 != 0
     }
 
+    #[inline(always)]
     pub fn is_promotion(&self) -> bool {
         self.0 & 8 << 12 != 0
     }
