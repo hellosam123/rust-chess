@@ -346,6 +346,18 @@ impl Board {
         self.mailbox[square as usize]
     }
 
+    #[inline(always)]
+    fn push_history(&mut self) {
+        self.history[self.history_ply % HISTORY_SIZE] = self.hash_key;
+        self.history_ply += 1;
+    }
+
+    #[inline(always)]
+    fn pop_history(&mut self) -> u64 {
+        self.history_ply -= 1;
+        self.history[self.history_ply % HISTORY_SIZE]
+    }
+
     fn set_general_bitboards(&mut self) {
         self.white_pieces = self.pieces[Piece::WhitePawn as usize]
             | self.pieces[Piece::WhiteKnight as usize]
@@ -526,18 +538,6 @@ impl Board {
         self.set_general_bitboards();
 
         Ok(())
-    }
-
-    #[inline(always)]
-    fn push_history(&mut self) {
-        self.history[self.history_ply % HISTORY_SIZE] = self.hash_key;
-        self.history_ply += 1;
-    }
-
-    #[inline(always)]
-    fn pop_history(&mut self) -> u64 {
-        self.history_ply -= 1;
-        self.history[self.history_ply % HISTORY_SIZE]
     }
 
     pub fn is_square_attacked_by(
