@@ -27,13 +27,19 @@ impl PerftPosition {
 
         let mut nodes = 0;
 
+        let pinned_mask = board.generate_pinned_mask();
+        let check_mask = board.generate_check_mask();
+
         let move_list = MoveGenerator::generate_pseudo_legal_moves(board);
-        for mv in move_list {
-            let (is_legal, unmove) = board.make_move(mv, true);
-            if !is_legal {
-                board.unmake_move(mv, unmove);
+        for i in 0..move_list.count {
+            let mv = move_list.moves[i];
+
+            if !board.is_legal(mv, pinned_mask, check_mask) {
                 continue;
             }
+
+            let unmove = board.make_move(mv);
+
             let sub_nodes = Self::perft(board, depth - 1);
             nodes += sub_nodes;
 
@@ -50,13 +56,19 @@ impl PerftPosition {
 
         let mut nodes = 0;
 
+        let pinned_mask = board.generate_pinned_mask();
+        let check_mask = board.generate_check_mask();
+
         let move_list = MoveGenerator::generate_pseudo_legal_moves(board);
-        for mv in move_list {
-            let (is_legal, unmove) = board.make_move(mv, true);
-            if !is_legal {
-                board.unmake_move(mv, unmove);
+        for i in 0..move_list.count {
+            let mv = move_list.moves[i];
+
+            if !board.is_legal(mv, pinned_mask, check_mask) {
                 continue;
             }
+
+            let unmove = board.make_move(mv);
+
             let sub_nodes = Self::perft(board, depth - 1);
             nodes += sub_nodes;
 
@@ -77,10 +89,10 @@ mod tests {
     fn perft_test_one() {
         let mut board = Board::new();
         board
-            .parse_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq -")
+            .parse_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
             .unwrap();
 
-        println!("{}", PerftPosition::expanded_perft(&mut board, 3));
+        println!("{}", PerftPosition::expanded_perft(&mut board, 6));
     }
 
     #[test]
@@ -168,8 +180,7 @@ mod tests {
                 "fen: {}\ndepth: {}\nexpected nodes: {}\nrecieved_nodes: {}\n",
                 perft.fen, perft.depth, perft.nodes, nodes
             );
-            // assert_eq!(perft.nodes, nodes);
+            assert_eq!(perft.nodes, nodes);
         }
     }
 }
-

@@ -1,7 +1,7 @@
 use crate::{
     attacks,
-    bitboard::CASTLING_PERMUTATIONS,
-    magic_bitboard,
+    bitboard::{self, CASTLING_PERMUTATIONS},
+    magic_bitboard::{self, get_rook_attacks_mask},
     mv::{Move, MoveFlag},
     zobrist::ZOBRIST,
 };
@@ -178,8 +178,8 @@ impl Piece {
         Ok(piece)
     }
 
-    pub const fn to_char(piece: Piece) -> char {
-        match piece {
+    pub const fn to_char(&self) -> char {
+        match self {
             Piece::WhitePawn => 'P',
             Piece::WhiteKnight => 'N',
             Piece::WhiteBishop => 'B',
@@ -196,14 +196,33 @@ impl Piece {
         }
     }
 
-    pub const fn get_phase_value(piece: Piece) -> u8 {
-        match piece {
+    #[inline(always)]
+    pub const fn get_phase_value(&self) -> u8 {
+        match self {
             Piece::WhitePawn | Piece::BlackPawn => Self::PAWN_PHASE_VALUE,
             Piece::WhiteKnight | Piece::BlackKnight => Self::KNIGHT_PHASE_VALUE,
             Piece::WhiteBishop | Piece::BlackBishop => Self::BISHOP_PHASE_VALUE,
             Piece::WhiteRook | Piece::BlackRook => Self::ROOK_PHASE_VALUE,
             Piece::WhiteQueen | Piece::BlackQueen => Self::QUEEN_PHASE_VALUE,
             Piece::WhiteKing | Piece::BlackKing => Self::KING_PHASE_VALUE,
+        }
+    }
+
+    #[inline(always)]
+    pub const fn get_color(&self) -> Color {
+        match self {
+            Piece::WhitePawn
+            | Piece::WhiteKnight
+            | Piece::WhiteBishop
+            | Piece::WhiteRook
+            | Piece::WhiteQueen
+            | Piece::WhiteKing => Color::White,
+            Piece::BlackPawn
+            | Piece::BlackKnight
+            | Piece::BlackBishop
+            | Piece::BlackRook
+            | Piece::BlackQueen
+            | Piece::BlackKing => Color::Black,
         }
     }
 }
@@ -219,20 +238,29 @@ impl Not for Color {
     }
 }
 
+impl Color {
+    pub fn get_offset(&self) -> usize {
+        if self == &Color::White { 0 } else { 6 }
+    }
+}
+
 impl CastlingRights {
     pub const WHITE_KINGSIDE: u8 = 1 << 0;
     pub const WHITE_QUEENSIDE: u8 = 1 << 1;
     pub const BLACK_KINGSIDE: u8 = 1 << 2;
     pub const BLACK_QUEENSIDE: u8 = 1 << 3;
 
+    #[inline(always)]
     pub const fn has(&self, mask: u8) -> bool {
         self.0 & mask != 0
     }
 
+    #[inline(always)]
     pub const fn put(&mut self, mask: u8) {
         self.0 |= mask;
     }
 
+    #[inline(always)]
     pub const fn remove(&mut self, mask: u8) {
         self.0 &= !mask;
     }
@@ -273,26 +301,47 @@ impl Board {
         *self = Self::new();
     }
 
+    #[inline(always)]
     fn set_piece_bit(&mut self, piece: Piece, square: u8) {
         self.pieces[piece as usize] |= 1u64 << square;
     }
 
+    #[inline(always)]
     fn put_piece(&mut self, piece: Piece, square: u8) {
         self.set_piece_bit(piece, square);
         self.mailbox[square as usize] = Some(piece);
         self.hash_key ^= ZOBRIST.piece_square[piece as usize][square as usize];
+
+        let piece_mask = 1 << square;
+        if piece.get_color() == Color::White {
+            self.white_pieces |= piece_mask;
+        } else {
+            self.black_pieces |= piece_mask;
+        }
+        self.all_pieces |= piece_mask;
     }
 
+    #[inline(always)]
     fn clear_piece_bit(&mut self, piece: Piece, square: u8) {
         self.pieces[piece as usize] &= !(1 << square);
     }
 
+    #[inline(always)]
     fn remove_piece(&mut self, piece: Piece, square: u8) {
         self.clear_piece_bit(piece, square);
         self.mailbox[square as usize] = None;
         self.hash_key ^= ZOBRIST.piece_square[piece as usize][square as usize];
+
+        let piece_mask = 1 << square;
+        if piece.get_color() == Color::White {
+            self.white_pieces &= !piece_mask;
+        } else {
+            self.black_pieces &= !piece_mask;
+        }
+        self.all_pieces &= !piece_mask;
     }
 
+    #[inline(always)]
     fn get_piece(&self, square: u8) -> Option<Piece> {
         self.mailbox[square as usize]
     }
@@ -324,7 +373,7 @@ impl Board {
 
                 let mut piece_char = '.';
                 if let Some(piece) = self.get_piece(square) {
-                    piece_char = Piece::to_char(piece);
+                    piece_char = piece.to_char();
                 }
 
                 print!("{} ", piece_char);
@@ -349,8 +398,7 @@ impl Board {
 
         let mut phase_value = 0;
         for piece in phase_value_pieces {
-            phase_value +=
-                self.pieces[piece as usize].count_ones() as u8 * Piece::get_phase_value(piece);
+            phase_value += self.pieces[piece as usize].count_ones() as u8 * piece.get_phase_value();
         }
 
         phase_value
@@ -480,11 +528,13 @@ impl Board {
         Ok(())
     }
 
+    #[inline(always)]
     fn push_history(&mut self) {
         self.history[self.history_ply % HISTORY_SIZE] = self.hash_key;
         self.history_ply += 1;
     }
 
+    #[inline(always)]
     fn pop_history(&mut self) -> u64 {
         self.history_ply -= 1;
         self.history[self.history_ply % HISTORY_SIZE]
@@ -498,34 +548,16 @@ impl Board {
     ) -> bool {
         let mut occupancy = self.all_pieces;
 
-        let attacking_pawns: u64;
-        let attacking_knights: u64;
-        let attacking_bishops: u64;
-        let attacking_rooks: u64;
-        let attacking_queens: u64;
-        let attacking_king: u64;
+        let offset = attacking_color.get_offset();
+        let attacking_pawns = self.pieces[Piece::WhitePawn as usize + offset];
+        let attacking_knights = self.pieces[Piece::WhiteKnight as usize + offset];
+        let attacking_bishops = self.pieces[Piece::WhiteBishop as usize + offset];
+        let attacking_rooks = self.pieces[Piece::WhiteRook as usize + offset];
+        let attacking_queens = self.pieces[Piece::WhiteQueen as usize + offset];
+        let attacking_king = self.pieces[Piece::WhiteKing as usize + offset];
 
-        if attacking_color == Color::White {
-            attacking_pawns = self.pieces[Piece::WhitePawn as usize];
-            attacking_knights = self.pieces[Piece::WhiteKnight as usize];
-            attacking_bishops = self.pieces[Piece::WhiteBishop as usize];
-            attacking_rooks = self.pieces[Piece::WhiteRook as usize];
-            attacking_queens = self.pieces[Piece::WhiteQueen as usize];
-            attacking_king = self.pieces[Piece::WhiteKing as usize];
-        } else {
-            attacking_pawns = self.pieces[Piece::BlackPawn as usize];
-            attacking_knights = self.pieces[Piece::BlackKnight as usize];
-            attacking_bishops = self.pieces[Piece::BlackBishop as usize];
-            attacking_rooks = self.pieces[Piece::BlackRook as usize];
-            attacking_queens = self.pieces[Piece::BlackQueen as usize];
-            attacking_king = self.pieces[Piece::BlackKing as usize];
-        }
         if king_xray {
-            let defending_king = if attacking_color == Color::White {
-                self.pieces[Piece::BlackKing as usize]
-            } else {
-                self.pieces[Piece::WhiteKing as usize]
-            };
+            let defending_king = self.pieces[Piece::BlackKing as usize - offset];
             occupancy &= !defending_king;
         }
         if attacks::KNIGHT_ATTACKS[square as usize] & attacking_knights != 0 {
@@ -559,15 +591,13 @@ impl Board {
         false
     }
 
-    pub fn make_move(&mut self, mv: Move, check_legality: bool) -> (bool, UnMove) {
+    pub fn make_move(&mut self, mv: Move) -> UnMove {
         let mut unmove = UnMove {
             captured_piece: None,
             castling_rights: self.castling_rights,
             en_passant_square: self.en_passant_square,
             half_move_clock: self.half_move_clock,
         };
-
-        let mut is_legal = true;
 
         self.push_history();
 
@@ -594,46 +624,18 @@ impl Board {
                 if self.active_color == Color::White {
                     self.remove_piece(Piece::WhiteRook, Square::H1 as u8);
                     self.put_piece(Piece::WhiteRook, Square::F1 as u8);
-
-                    if check_legality
-                        && (self.is_square_attacked_by(Square::E1 as u8, Color::Black, true)
-                            || self.is_square_attacked_by(Square::F1 as u8, Color::Black, true))
-                    {
-                        is_legal = false;
-                    }
                 } else {
                     self.remove_piece(Piece::BlackRook, Square::H8 as u8);
                     self.put_piece(Piece::BlackRook, Square::F8 as u8);
-
-                    if check_legality
-                        && (self.is_square_attacked_by(Square::E8 as u8, Color::White, true)
-                            || self.is_square_attacked_by(Square::F8 as u8, Color::White, true))
-                    {
-                        is_legal = false;
-                    }
                 }
             }
             MoveFlag::QueenCastle => {
                 if self.active_color == Color::White {
                     self.remove_piece(Piece::WhiteRook, Square::A1 as u8);
                     self.put_piece(Piece::WhiteRook, Square::D1 as u8);
-
-                    if check_legality
-                        && (self.is_square_attacked_by(Square::E1 as u8, Color::Black, true)
-                            || self.is_square_attacked_by(Square::D1 as u8, Color::Black, true))
-                    {
-                        is_legal = false;
-                    }
                 } else {
                     self.remove_piece(Piece::BlackRook, Square::A8 as u8);
                     self.put_piece(Piece::BlackRook, Square::D8 as u8);
-
-                    if check_legality
-                        && (self.is_square_attacked_by(Square::E8 as u8, Color::White, true)
-                            || self.is_square_attacked_by(Square::D8 as u8, Color::White, true))
-                    {
-                        is_legal = false;
-                    }
                 }
             }
             MoveFlag::EnPassant => {
@@ -663,7 +665,7 @@ impl Board {
             self.remove_piece(captured_piece, to);
             unmove.captured_piece = Some(captured_piece);
 
-            self.phase_value -= Piece::get_phase_value(captured_piece);
+            self.phase_value -= captured_piece.get_phase_value();
         }
 
         if let Some(move_piece) = self.get_piece(from) {
@@ -725,34 +727,10 @@ impl Board {
             }
         }
 
-        self.set_general_bitboards();
-
-        if check_legality && is_legal {
-            if self.active_color == Color::White
-                && self.is_square_attacked_by(
-                    self.pieces[Piece::WhiteKing as usize].trailing_zeros() as u8,
-                    Color::Black,
-                    false,
-                )
-            {
-                is_legal = false;
-            }
-
-            if self.active_color == Color::Black
-                && self.is_square_attacked_by(
-                    self.pieces[Piece::BlackKing as usize].trailing_zeros() as u8,
-                    Color::White,
-                    false,
-                )
-            {
-                is_legal = false;
-            }
-        }
-
         self.active_color = !self.active_color;
         self.hash_key ^= ZOBRIST.active_color;
 
-        (is_legal, unmove)
+        unmove
     }
 
     pub fn unmake_move(&mut self, mv: Move, unmove: UnMove) {
@@ -824,7 +802,7 @@ impl Board {
             && let Some(captured_piece) = unmove.captured_piece
         {
             self.put_piece(captured_piece, to);
-            self.phase_value += Piece::get_phase_value(captured_piece);
+            self.phase_value += captured_piece.get_phase_value();
         }
 
         match flag {
@@ -855,8 +833,195 @@ impl Board {
             }
             _ => {}
         }
+    }
 
-        self.set_general_bitboards();
+    pub fn is_legal(&self, mv: Move, pinned_mask: u64, check_mask: u64) -> bool {
+        let from = mv.get_from();
+        let to = mv.get_to();
+        let flag = mv.get_flag();
+
+        let offset = self.active_color.get_offset();
+        let king_square = self.pieces[Piece::WhiteKing as usize + offset].trailing_zeros() as u8;
+
+        let Some(move_piece) = self.get_piece(from) else {
+            return false;
+        };
+
+        if move_piece == Piece::WhiteKing || move_piece == Piece::BlackKing {
+            if self.is_square_attacked_by(to, !self.active_color, true) {
+                return false;
+            }
+
+            if flag == MoveFlag::KingCastle
+                && (check_mask != !0u64
+                    || self.is_square_attacked_by(to - 1, !self.active_color, false))
+            {
+                return false;
+            }
+
+            if flag == MoveFlag::QueenCastle
+                && (check_mask != !0u64
+                    || self.is_square_attacked_by(to + 1, !self.active_color, false))
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        if flag == MoveFlag::EnPassant {
+            let captured_pawn_mask = if self.active_color == Color::White {
+                1 << (to - 8)
+            } else {
+                1 << (to + 8)
+            };
+
+            if check_mask == 0 {
+                return false;
+            } else {
+                if (captured_pawn_mask | (1 << to)) & check_mask == 0 {
+                    return false;
+                }
+            }
+
+            if (1 << from) & pinned_mask != 0
+                && bitboard::get_ray_between_end_inclusive(king_square, from)
+                    & bitboard::get_ray_between_end_inclusive(king_square, to)
+                    == 0
+            {
+                return false;
+            }
+
+            let king_mask = self.pieces[Piece::WhiteKing as usize + offset];
+
+            let en_passant_from_rank = if self.active_color == Color::White {
+                bitboard::RANK_5
+            } else {
+                bitboard::RANK_4
+            };
+
+            if king_mask & en_passant_from_rank == 0 {
+                return true;
+            }
+
+            let them_sliders = (self.pieces[Piece::BlackRook as usize - offset]
+                | self.pieces[Piece::BlackQueen as usize - offset])
+                & en_passant_from_rank;
+
+            if them_sliders == 0 {
+                return true;
+            }
+
+            let sim_mask = self.all_pieces & !captured_pawn_mask & !(1 << from);
+
+            if them_sliders & get_rook_attacks_mask(sim_mask, king_square) != 0 {
+                return false;
+            }
+
+            return true;
+        }
+
+        if (1 << to) & check_mask == 0 {
+            return false;
+        }
+
+        if (1 << from) & pinned_mask == 0 {
+            return true;
+        } else {
+            if bitboard::get_ray_between_end_inclusive(king_square, from)
+                & bitboard::get_ray_between_end_inclusive(king_square, to)
+                == 0
+            {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    pub fn generate_pinned_mask(&self) -> u64 {
+        let mut pinned_mask = 0;
+
+        let us_mask: u64;
+        let them_mask: u64;
+
+        if self.active_color == Color::White {
+            us_mask = self.white_pieces;
+            them_mask = self.black_pieces;
+        } else {
+            us_mask = self.black_pieces;
+            them_mask = self.white_pieces;
+        }
+
+        let offset = self.active_color.get_offset();
+        let them_diagonals_mask = self.pieces[Piece::BlackBishop as usize - offset]
+            | self.pieces[Piece::BlackQueen as usize - offset];
+        let them_orthogonals_mask = self.pieces[Piece::BlackRook as usize - offset]
+            | self.pieces[Piece::BlackQueen as usize - offset];
+        let king_square = self.pieces[Piece::WhiteKing as usize + offset].trailing_zeros() as u8;
+
+        let potential_diagonals_mask =
+            magic_bitboard::get_bishop_attacks_mask(them_mask, king_square) & them_diagonals_mask;
+
+        let potential_orthogonals_mask =
+            magic_bitboard::get_rook_attacks_mask(them_mask, king_square) & them_orthogonals_mask;
+
+        let mut pinners = potential_diagonals_mask | potential_orthogonals_mask;
+
+        while pinners != 0 {
+            let pinner_square = pinners.trailing_zeros() as u8;
+            pinners &= pinners - 1;
+
+            let ray = bitboard::get_ray_between_exclusive(king_square, pinner_square);
+
+            let blockers_on_ray = ray & us_mask;
+
+            if blockers_on_ray.count_ones() == 1 {
+                pinned_mask |= blockers_on_ray;
+            }
+        }
+
+        pinned_mask
+    }
+
+    pub fn generate_check_mask(&self) -> u64 {
+        let mut checkers_mask = 0;
+
+        let offset = self.active_color.get_offset();
+
+        let attacking_pawns = self.pieces[Piece::BlackPawn as usize - offset];
+        let attacking_knights = self.pieces[Piece::BlackKnight as usize - offset];
+        let attacking_bishops = self.pieces[Piece::BlackBishop as usize - offset];
+        let attacking_rooks = self.pieces[Piece::BlackRook as usize - offset];
+        let attacking_queens = self.pieces[Piece::BlackQueen as usize - offset];
+
+        let king_square = self.pieces[Piece::WhiteKing as usize + offset].trailing_zeros() as u8;
+
+        checkers_mask |= attacks::KNIGHT_ATTACKS[king_square as usize] & attacking_knights;
+
+        if self.active_color == Color::White {
+            checkers_mask |= attacks::WHITE_PAWN_ATTACKS[king_square as usize] & attacking_pawns;
+        } else {
+            checkers_mask |= attacks::BLACK_PAWN_ATTACKS[king_square as usize] & attacking_pawns;
+        }
+
+        let bishop_attacks = magic_bitboard::get_bishop_attacks_mask(self.all_pieces, king_square);
+        checkers_mask |= bishop_attacks & (attacking_bishops | attacking_queens);
+
+        let rook_attacks = magic_bitboard::get_rook_attacks_mask(self.all_pieces, king_square);
+        checkers_mask |= rook_attacks & (attacking_rooks | attacking_queens);
+
+        if checkers_mask == 0 {
+            return !0u64;
+        }
+
+        if checkers_mask.count_ones() != 1 {
+            return 0;
+        }
+
+        let checker_square = checkers_mask.trailing_zeros() as u8;
+
+        bitboard::get_ray_between_exclusive(king_square, checker_square) | checkers_mask
     }
 }
 
@@ -868,18 +1033,24 @@ mod tests {
     fn check_detection() {
         let mut board = Board::new();
         board
-            .parse_fen("rnbqkbnr/1ppppppp/p7/8/Q7/2P5/PP1PPPPP/RNB1KBNR b KQkq - 0 1")
+            .parse_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq -")
             .unwrap();
 
         board.print_board();
 
-        let is_attacked_test = board.is_square_attacked_by(Square::D7 as u8, Color::White, false);
-        println!("{}", is_attacked_test);
+        // let is_attacked_test = board.is_square_attacked_by(Square::D7 as u8, Color::White, false);
+        // println!("{}", is_attacked_test);
 
-        let test_mv = Move::new(Square::D7 as u8, Square::D6 as u8, MoveFlag::QuietMove);
-        let (is_legal, unmove) = board.make_move(test_mv, true);
-        board.print_board();
+        let test_mv = Move::new(Square::E1 as u8, Square::F1 as u8, MoveFlag::QuietMove);
+
+        let pinned_mask = board.generate_pinned_mask();
+        let check_mask = board.generate_check_mask();
+
+        let is_legal = board.is_legal(test_mv, pinned_mask, check_mask);
         println!("{}", is_legal);
+
+        let unmove = board.make_move(test_mv);
+        board.print_board();
 
         board.unmake_move(test_mv, unmove);
         board.print_board();
