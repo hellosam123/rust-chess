@@ -53,6 +53,8 @@ impl fmt::Display for Move {
 }
 
 impl Move {
+    pub const NULL: Self = Self(0);
+
     const FROM_MASK: u16 = 0x3F; // 0000 0000 0011 1111 (bits 0-5)
     const TO_MASK: u16 = 0xFC0; // 0000 1111 1100 0000 (bits 6-11)
     const FLAG_MASK: u16 = 0xF000; // 1111 0000 0000 0000 (bits 12-15)
