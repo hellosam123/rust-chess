@@ -37,34 +37,35 @@ const fn generate_castling_permutations() -> [u8; 64] {
     castling_permutations
 }
 
-static RAY_BETWEEN: [[u64; 64]; 64] = generate_ray_table();
+static RAY_BETWEEN_EXCLUSIVE: [[u64; 64]; 64] = generate_ray_table();
+static RAY_BETWEEN_END_INCLUSIVE: [[u64; 64]; 64] = generate_ray_end_inclusive_table();
 
 const fn generate_ray_table() -> [[u64; 64]; 64] {
     let mut ray_table = [[0; 64]; 64];
 
-    let mut square1: i8 = 0;
+    let mut start_square: i8 = 0;
 
-    while square1 < 64 {
-        let sq1rank = square1 / 8;
-        let sq1file = square1 % 8;
+    while start_square < 64 {
+        let start_square_rank = start_square / 8;
+        let start_square_file = start_square % 8;
 
-        let mut square2 = 0;
-        while square2 < 64 {
-            if square1 == square2 {
-                square2 += 1;
+        let mut end_square = 0;
+        while end_square < 64 {
+            if start_square == end_square {
+                end_square += 1;
                 continue;
             }
 
-            if ray_table[square1 as usize][square2 as usize] != 0 {
-                square2 += 1;
+            if ray_table[start_square as usize][end_square as usize] != 0 {
+                end_square += 1;
                 continue;
             }
 
-            let sq2rank = square2 / 8;
-            let sq2file = square2 % 8;
+            let end_square_rank = end_square / 8;
+            let end_square_file = end_square % 8;
 
-            let rank_diff = sq2rank - sq1rank;
-            let file_diff = sq2file - sq1file;
+            let rank_diff = end_square_rank - start_square_rank;
+            let file_diff = end_square_file - start_square_file;
 
             let is_bishop_ray = rank_diff.abs() == file_diff.abs();
             let is_rook_ray = rank_diff == 0 || file_diff == 0;
@@ -75,13 +76,13 @@ const fn generate_ray_table() -> [[u64; 64]; 64] {
                 let step_rank = rank_diff.signum();
                 let step_file = file_diff.signum();
 
-                let mut current_rank = sq1rank + step_rank;
-                let mut current_file = sq1file + step_file;
+                let mut current_rank = start_square_rank + step_rank;
+                let mut current_file = start_square_file + step_file;
 
                 while (current_rank >= 0 && current_rank < 8)
                     && (current_file >= 0 && current_file < 8)
                 {
-                    if current_rank == sq2rank && current_file == sq2file {
+                    if current_rank == end_square_rank && current_file == end_square_file {
                         break;
                     }
                     let current_sq = current_rank * 8 + current_file;
@@ -91,20 +92,85 @@ const fn generate_ray_table() -> [[u64; 64]; 64] {
                     current_file += step_file;
                 }
 
-                ray_table[square1 as usize][square2 as usize] = ray;
-                ray_table[square2 as usize][square1 as usize] = ray;
+                ray_table[start_square as usize][end_square as usize] = ray;
+                ray_table[end_square as usize][start_square as usize] = ray;
             }
 
-            square2 += 1;
+            end_square += 1;
         }
 
-        square1 += 1;
+        start_square += 1;
+    }
+
+    ray_table
+}
+
+const fn generate_ray_end_inclusive_table() -> [[u64; 64]; 64] {
+    let mut ray_table = [[0; 64]; 64];
+
+    let mut start_square: i8 = 0;
+
+    while start_square < 64 {
+        let start_square_rank = start_square / 8;
+        let start_square_file = start_square % 8;
+
+        let mut end_square = 0;
+        while end_square < 64 {
+            if start_square == end_square {
+                end_square += 1;
+                continue;
+            }
+
+            let end_square_rank = end_square / 8;
+            let end_square_file = end_square % 8;
+
+            let rank_diff = end_square_rank - start_square_rank;
+            let file_diff = end_square_file - start_square_file;
+
+            let is_bishop_ray = rank_diff.abs() == file_diff.abs();
+            let is_rook_ray = rank_diff == 0 || file_diff == 0;
+
+            if is_bishop_ray || is_rook_ray {
+                let mut ray = 0;
+
+                let step_rank = rank_diff.signum();
+                let step_file = file_diff.signum();
+
+                let mut current_rank = start_square_rank + step_rank;
+                let mut current_file = start_square_file + step_file;
+
+                while (current_rank >= 0 && current_rank < 8)
+                    && (current_file >= 0 && current_file < 8)
+                {
+                    let current_sq = current_rank * 8 + current_file;
+                    ray |= 1 << current_sq;
+
+                    if current_rank == end_square_rank && current_file == end_square_file {
+                        break;
+                    }
+
+                    current_rank += step_rank;
+                    current_file += step_file;
+                }
+
+                ray_table[start_square as usize][end_square as usize] = ray;
+            }
+
+            end_square += 1;
+        }
+
+        start_square += 1;
     }
 
     ray_table
 }
 
 #[inline(always)]
-pub fn get_ray_between_exclusive(square1: u8, square2: u8) -> u64 {
-    RAY_BETWEEN[square1 as usize][square2 as usize]
+pub fn get_ray_between_exclusive(start_square: u8, end_square: u8) -> u64 {
+    RAY_BETWEEN_EXCLUSIVE[start_square as usize][end_square as usize]
+}
+
+#[inline(always)]
+pub fn get_ray_between_end_inclusive(start_square: u8, end_square: u8) -> u64 {
+    RAY_BETWEEN_END_INCLUSIVE[start_square as usize][end_square as usize]
 }
