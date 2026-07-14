@@ -20,7 +20,7 @@ impl MoveGenerator {
         move_list
     }
 
-    pub fn generate_pawn_moves(board: &Board, move_list: &mut Vec<Move>) {
+    fn generate_pawn_moves(board: &Board, move_list: &mut Vec<Move>) {
         if board.active_color == Color::White {
             Self::generate_white_pawn_moves(board, move_list);
         } else {
@@ -170,7 +170,7 @@ impl MoveGenerator {
         }
     }
 
-    pub fn generate_knight_moves(board: &Board, move_list: &mut Vec<Move>) {
+    fn generate_knight_moves(board: &Board, move_list: &mut Vec<Move>) {
         let mut knights_mask: u64;
         let us_mask: u64;
         let them_mask: u64;
@@ -335,6 +335,9 @@ impl MoveGenerator {
 
         let from = king_mask.trailing_zeros() as u8;
 
+        if from == 64 {
+            board.print_board();
+        }
         let mut attacks_mask = attacks::KING_ATTACKS[from as usize];
         attacks_mask &= !us_mask;
 
@@ -404,5 +407,21 @@ impl MoveGenerator {
             Move::new(from, to, MoveFlag::PromoteCaptureR),
             Move::new(from, to, MoveFlag::PromoteCaptureQ),
         ])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_generate_pseudo_legal_moves() -> Result<(), Box<dyn std::error::Error>> {
+        let b = Board::new_starting_board()?;
+        b.print_board();
+
+        let moves_list = MoveGenerator::generate_pseudo_legal_moves(&b);
+        println!("{:?}", moves_list);
+
+        Ok(())
     }
 }

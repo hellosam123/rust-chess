@@ -1,6 +1,6 @@
 use crate::{
     attacks,
-    bitboard::{self, CASTLING_PERMUTATIONS},
+    bitboard::CASTLING_PERMUTATIONS,
     magic_bitboard,
     mv::{Move, MoveFlag},
     zobrist::ZOBRIST,
@@ -616,7 +616,7 @@ impl Board {
             MoveFlag::QueenCastle => {
                 if self.active_color == Color::White {
                     self.remove_piece(Piece::WhiteRook, Square::A1 as u8);
-                    self.put_piece(Piece::WhiteRook, Square::C1 as u8);
+                    self.put_piece(Piece::WhiteRook, Square::D1 as u8);
 
                     if check_legality
                         && (self.is_square_attacked_by(Square::E1 as u8, Color::Black, true)
@@ -626,7 +626,7 @@ impl Board {
                     }
                 } else {
                     self.remove_piece(Piece::BlackRook, Square::A8 as u8);
-                    self.put_piece(Piece::BlackRook, Square::C8 as u8);
+                    self.put_piece(Piece::BlackRook, Square::D8 as u8);
 
                     if check_legality
                         && (self.is_square_attacked_by(Square::E8 as u8, Color::White, true)
@@ -725,6 +725,8 @@ impl Board {
             }
         }
 
+        self.set_general_bitboards();
+
         if check_legality && is_legal {
             if self.active_color == Color::White
                 && self.is_square_attacked_by(
@@ -753,7 +755,7 @@ impl Board {
         (is_legal, unmove)
     }
 
-    fn unmake_move(&mut self, mv: Move, unmove: UnMove) {
+    pub fn unmake_move(&mut self, mv: Move, unmove: UnMove) {
         self.castling_rights = unmove.castling_rights;
         self.en_passant_square = unmove.en_passant_square;
         self.half_move_clock = unmove.half_move_clock;
@@ -837,10 +839,10 @@ impl Board {
             }
             MoveFlag::QueenCastle => {
                 if self.active_color == Color::White {
-                    self.remove_piece(Piece::WhiteRook, Square::C1 as u8);
+                    self.remove_piece(Piece::WhiteRook, Square::D1 as u8);
                     self.put_piece(Piece::WhiteRook, Square::A1 as u8);
                 } else {
-                    self.remove_piece(Piece::BlackRook, Square::C8 as u8);
+                    self.remove_piece(Piece::BlackRook, Square::D8 as u8);
                     self.put_piece(Piece::BlackRook, Square::A8 as u8);
                 }
             }
@@ -853,5 +855,33 @@ impl Board {
             }
             _ => {}
         }
+
+        self.set_general_bitboards();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn check_detection() {
+        let mut board = Board::new();
+        board
+            .parse_fen("rnbqkbnr/1ppppppp/p7/8/Q7/2P5/PP1PPPPP/RNB1KBNR b KQkq - 0 1")
+            .unwrap();
+
+        board.print_board();
+
+        let is_attacked_test = board.is_square_attacked_by(Square::D7 as u8, Color::White, false);
+        println!("{}", is_attacked_test);
+
+        let test_mv = Move::new(Square::D7 as u8, Square::D6 as u8, MoveFlag::QuietMove);
+        let (is_legal, unmove) = board.make_move(test_mv, true);
+        board.print_board();
+        println!("{}", is_legal);
+
+        board.unmake_move(test_mv, unmove);
+        board.print_board();
     }
 }
