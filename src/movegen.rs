@@ -5,11 +5,37 @@ use crate::{
     mv::{Move, MoveFlag},
 };
 
+#[derive(Debug)]
+pub struct MoveList {
+    pub moves: [Move; 256],
+    pub count: usize,
+}
+
 pub struct MoveGenerator;
 
+impl Default for MoveList {
+    fn default() -> Self {
+        Self {
+            moves: [Move::NULL; 256],
+            count: 0,
+        }
+    }
+}
+
+impl MoveList {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn push(&mut self, mv: Move) {
+        self.moves[self.count] = mv;
+        self.count += 1;
+    }
+}
+
 impl MoveGenerator {
-    pub fn generate_pseudo_legal_moves(board: &Board) -> Vec<Move> {
-        let mut move_list: Vec<Move> = Vec::with_capacity(48);
+    pub fn generate_pseudo_legal_moves(board: &Board) -> MoveList {
+        let mut move_list: MoveList = MoveList::new();
         Self::generate_pawn_moves(board, &mut move_list);
         Self::generate_knight_moves(board, &mut move_list);
         Self::generate_bishop_moves(board, &mut move_list);
@@ -20,7 +46,8 @@ impl MoveGenerator {
         move_list
     }
 
-    fn generate_pawn_moves(board: &Board, move_list: &mut Vec<Move>) {
+    #[inline(always)]
+    fn generate_pawn_moves(board: &Board, move_list: &mut MoveList) {
         if board.active_color == Color::White {
             Self::generate_white_pawn_moves(board, move_list);
         } else {
@@ -28,7 +55,7 @@ impl MoveGenerator {
         }
     }
 
-    fn generate_white_pawn_moves(board: &Board, move_list: &mut Vec<Move>) {
+    fn generate_white_pawn_moves(board: &Board, move_list: &mut MoveList) {
         let pawns_mask = board.pieces[Piece::WhitePawn as usize];
         let them_mask = board.black_pieces;
         let empty_mask = !board.all_pieces;
@@ -99,7 +126,7 @@ impl MoveGenerator {
         }
     }
 
-    fn generate_black_pawn_moves(board: &Board, move_list: &mut Vec<Move>) {
+    fn generate_black_pawn_moves(board: &Board, move_list: &mut MoveList) {
         let pawns_mask = board.pieces[Piece::BlackPawn as usize];
         let them_mask = board.white_pieces;
         let empty_mask = !board.all_pieces;
@@ -170,7 +197,7 @@ impl MoveGenerator {
         }
     }
 
-    fn generate_knight_moves(board: &Board, move_list: &mut Vec<Move>) {
+    fn generate_knight_moves(board: &Board, move_list: &mut MoveList) {
         let mut knights_mask: u64;
         let us_mask: u64;
         let them_mask: u64;
@@ -207,7 +234,7 @@ impl MoveGenerator {
         }
     }
 
-    fn generate_bishop_moves(board: &Board, move_list: &mut Vec<Move>) {
+    fn generate_bishop_moves(board: &Board, move_list: &mut MoveList) {
         let mut bishops_mask: u64;
         let us_mask: u64;
         let them_mask: u64;
@@ -244,7 +271,7 @@ impl MoveGenerator {
         }
     }
 
-    fn generate_rook_moves(board: &Board, move_list: &mut Vec<Move>) {
+    fn generate_rook_moves(board: &Board, move_list: &mut MoveList) {
         let mut rooks_mask: u64;
         let us_mask: u64;
         let them_mask: u64;
@@ -281,7 +308,7 @@ impl MoveGenerator {
         }
     }
 
-    fn generate_queen_moves(board: &Board, move_list: &mut Vec<Move>) {
+    fn generate_queen_moves(board: &Board, move_list: &mut MoveList) {
         let mut queens_mask: u64;
         let us_mask: u64;
         let them_mask: u64;
@@ -318,7 +345,7 @@ impl MoveGenerator {
         }
     }
 
-    fn generate_king_moves(board: &Board, move_list: &mut Vec<Move>) {
+    fn generate_king_moves(board: &Board, move_list: &mut MoveList) {
         let king_mask: u64;
         let us_mask: u64;
         let them_mask: u64;
@@ -390,23 +417,19 @@ impl MoveGenerator {
     }
 
     #[inline(always)]
-    fn append_promotions(from: u8, to: u8, move_list: &mut Vec<Move>) {
-        move_list.extend([
-            Move::new(from, to, MoveFlag::PromoteN),
-            Move::new(from, to, MoveFlag::PromoteB),
-            Move::new(from, to, MoveFlag::PromoteR),
-            Move::new(from, to, MoveFlag::PromoteQ),
-        ])
+    fn append_promotions(from: u8, to: u8, move_list: &mut MoveList) {
+        move_list.push(Move::new(from, to, MoveFlag::PromoteN));
+        move_list.push(Move::new(from, to, MoveFlag::PromoteB));
+        move_list.push(Move::new(from, to, MoveFlag::PromoteR));
+        move_list.push(Move::new(from, to, MoveFlag::PromoteQ));
     }
 
     #[inline(always)]
-    fn append_capture_promotions(from: u8, to: u8, move_list: &mut Vec<Move>) {
-        move_list.extend([
-            Move::new(from, to, MoveFlag::PromoteCaptureN),
-            Move::new(from, to, MoveFlag::PromoteCaptureB),
-            Move::new(from, to, MoveFlag::PromoteCaptureR),
-            Move::new(from, to, MoveFlag::PromoteCaptureQ),
-        ])
+    fn append_capture_promotions(from: u8, to: u8, move_list: &mut MoveList) {
+        move_list.push(Move::new(from, to, MoveFlag::PromoteCaptureN));
+        move_list.push(Move::new(from, to, MoveFlag::PromoteCaptureB));
+        move_list.push(Move::new(from, to, MoveFlag::PromoteCaptureR));
+        move_list.push(Move::new(from, to, MoveFlag::PromoteCaptureQ));
     }
 }
 
