@@ -27,6 +27,7 @@ impl MoveList {
         Self::default()
     }
 
+    #[inline(always)]
     pub fn push(&mut self, mv: Move) {
         self.moves[self.count] = mv;
         self.count += 1;
@@ -216,20 +217,23 @@ impl MoveGenerator {
             let from = knights_mask.trailing_zeros() as u8;
             knights_mask &= knights_mask - 1;
 
-            let mut attacks_mask = attacks::KNIGHT_ATTACKS[from as usize];
-            attacks_mask &= !us_mask;
+            let attacks_mask = attacks::KNIGHT_ATTACKS[from as usize] & !us_mask;
 
-            while attacks_mask != 0 {
-                let to = attacks_mask.trailing_zeros() as u8;
-                attacks_mask &= attacks_mask - 1;
+            let mut captures_mask = attacks_mask & them_mask;
+            let mut quiets_mask = attacks_mask & !them_mask;
 
-                let flag = if 1 << to & them_mask != 0 {
-                    MoveFlag::Capture
-                } else {
-                    MoveFlag::QuietMove
-                };
+            while captures_mask != 0 {
+                let to = captures_mask.trailing_zeros() as u8;
+                captures_mask &= captures_mask - 1;
 
-                move_list.push(Move::new(from, to, flag));
+                move_list.push(Move::new(from, to, MoveFlag::Capture));
+            }
+
+            while quiets_mask != 0 {
+                let to = quiets_mask.trailing_zeros() as u8;
+                quiets_mask &= quiets_mask - 1;
+
+                move_list.push(Move::new(from, to, MoveFlag::QuietMove));
             }
         }
     }
@@ -253,20 +257,24 @@ impl MoveGenerator {
             let from = bishops_mask.trailing_zeros() as u8;
             bishops_mask &= bishops_mask - 1;
 
-            let mut attacks_mask = magic_bitboard::get_bishop_attacks_mask(board.all_pieces, from);
-            attacks_mask &= !us_mask;
+            let attacks_mask =
+                magic_bitboard::get_bishop_attacks_mask(board.all_pieces, from) & !us_mask;
 
-            while attacks_mask != 0 {
-                let to = attacks_mask.trailing_zeros() as u8;
-                attacks_mask &= attacks_mask - 1;
+            let mut captures_mask = attacks_mask & them_mask;
+            let mut quiets_mask = attacks_mask & !them_mask;
 
-                let flag = if 1 << to & them_mask != 0 {
-                    MoveFlag::Capture
-                } else {
-                    MoveFlag::QuietMove
-                };
+            while captures_mask != 0 {
+                let to = captures_mask.trailing_zeros() as u8;
+                captures_mask &= captures_mask - 1;
 
-                move_list.push(Move::new(from, to, flag));
+                move_list.push(Move::new(from, to, MoveFlag::Capture));
+            }
+
+            while quiets_mask != 0 {
+                let to = quiets_mask.trailing_zeros() as u8;
+                quiets_mask &= quiets_mask - 1;
+
+                move_list.push(Move::new(from, to, MoveFlag::QuietMove));
             }
         }
     }
@@ -290,20 +298,24 @@ impl MoveGenerator {
             let from = rooks_mask.trailing_zeros() as u8;
             rooks_mask &= rooks_mask - 1;
 
-            let mut attacks_mask = magic_bitboard::get_rook_attacks_mask(board.all_pieces, from);
-            attacks_mask &= !us_mask;
+            let attacks_mask =
+                magic_bitboard::get_rook_attacks_mask(board.all_pieces, from) & !us_mask;
 
-            while attacks_mask != 0 {
-                let to = attacks_mask.trailing_zeros() as u8;
-                attacks_mask &= attacks_mask - 1;
+            let mut captures_mask = attacks_mask & them_mask;
+            let mut quiets_mask = attacks_mask & !them_mask;
 
-                let flag = if 1 << to & them_mask != 0 {
-                    MoveFlag::Capture
-                } else {
-                    MoveFlag::QuietMove
-                };
+            while captures_mask != 0 {
+                let to = captures_mask.trailing_zeros() as u8;
+                captures_mask &= captures_mask - 1;
 
-                move_list.push(Move::new(from, to, flag));
+                move_list.push(Move::new(from, to, MoveFlag::Capture));
+            }
+
+            while quiets_mask != 0 {
+                let to = quiets_mask.trailing_zeros() as u8;
+                quiets_mask &= quiets_mask - 1;
+
+                move_list.push(Move::new(from, to, MoveFlag::QuietMove));
             }
         }
     }
@@ -327,20 +339,24 @@ impl MoveGenerator {
             let from = queens_mask.trailing_zeros() as u8;
             queens_mask &= queens_mask - 1;
 
-            let mut attacks_mask = magic_bitboard::get_queen_attacks_mask(board.all_pieces, from);
-            attacks_mask &= !us_mask;
+            let attacks_mask =
+                magic_bitboard::get_queen_attacks_mask(board.all_pieces, from) & !us_mask;
 
-            while attacks_mask != 0 {
-                let to = attacks_mask.trailing_zeros() as u8;
-                attacks_mask &= attacks_mask - 1;
+            let mut captures_mask = attacks_mask & them_mask;
+            let mut quiets_mask = attacks_mask & !them_mask;
 
-                let flag = if 1 << to & them_mask != 0 {
-                    MoveFlag::Capture
-                } else {
-                    MoveFlag::QuietMove
-                };
+            while captures_mask != 0 {
+                let to = captures_mask.trailing_zeros() as u8;
+                captures_mask &= captures_mask - 1;
 
-                move_list.push(Move::new(from, to, flag));
+                move_list.push(Move::new(from, to, MoveFlag::Capture));
+            }
+
+            while quiets_mask != 0 {
+                let to = quiets_mask.trailing_zeros() as u8;
+                quiets_mask &= quiets_mask - 1;
+
+                move_list.push(Move::new(from, to, MoveFlag::QuietMove));
             }
         }
     }
@@ -365,20 +381,24 @@ impl MoveGenerator {
         if from == 64 {
             board.print_board();
         }
-        let mut attacks_mask = attacks::KING_ATTACKS[from as usize];
-        attacks_mask &= !us_mask;
 
-        while attacks_mask != 0 {
-            let to = attacks_mask.trailing_zeros() as u8;
-            attacks_mask &= attacks_mask - 1;
+        let attacks_mask = attacks::KING_ATTACKS[from as usize] & !us_mask;
 
-            let flag = if 1 << to & them_mask != 0 {
-                MoveFlag::Capture
-            } else {
-                MoveFlag::QuietMove
-            };
+        let mut captures_mask = attacks_mask & them_mask;
+        let mut quiets_mask = attacks_mask & !them_mask;
 
-            move_list.push(Move::new(from, to, flag));
+        while captures_mask != 0 {
+            let to = captures_mask.trailing_zeros() as u8;
+            captures_mask &= captures_mask - 1;
+
+            move_list.push(Move::new(from, to, MoveFlag::Capture));
+        }
+
+        while quiets_mask != 0 {
+            let to = quiets_mask.trailing_zeros() as u8;
+            quiets_mask &= quiets_mask - 1;
+
+            move_list.push(Move::new(from, to, MoveFlag::QuietMove));
         }
 
         if board.active_color == Color::White {
