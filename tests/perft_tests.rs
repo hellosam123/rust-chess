@@ -38,12 +38,16 @@ impl PerftPosition {
                 continue;
             }
 
-            let unmove = board.make_move(mv);
+            if depth == 1 {
+                nodes += 1;
+            } else {
+                let unmove = board.make_move(mv);
 
-            let sub_nodes = Self::perft(board, depth - 1);
-            nodes += sub_nodes;
+                let sub_nodes = Self::perft(board, depth - 1);
+                nodes += sub_nodes;
 
-            board.unmake_move(mv, unmove);
+                board.unmake_move(mv, unmove);
+            }
         }
 
         nodes
@@ -67,14 +71,18 @@ impl PerftPosition {
                 continue;
             }
 
-            let unmove = board.make_move(mv);
+            if depth == 1 {
+                nodes += 1;
+            } else {
+                let unmove = board.make_move(mv);
 
-            let sub_nodes = Self::perft(board, depth - 1);
-            nodes += sub_nodes;
+                let sub_nodes = Self::perft(board, depth - 1);
+                nodes += sub_nodes;
 
-            println!("{}: {}", mv, sub_nodes);
+                println!("{}: {}", mv, sub_nodes);
 
-            board.unmake_move(mv, unmove);
+                board.unmake_move(mv, unmove);
+            }
         }
 
         nodes
@@ -83,6 +91,8 @@ impl PerftPosition {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Instant;
+
     use super::*;
 
     #[test]
@@ -97,7 +107,15 @@ mod tests {
 
     #[test]
     fn perft_test_starting_pos() {
-        let result_list = vec![(1, 20), (2, 400), (3, 8902), (4, 197281), (5, 4865609)];
+        let result_list = vec![
+            (1, 20),
+            (2, 400),
+            (3, 8902),
+            (4, 197281),
+            (5, 4865609),
+            (6, 119060324),
+            (7, 3195901860),
+        ];
         let perft_list = PerftPosition::new_perfts(
             "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
             result_list,
@@ -106,7 +124,19 @@ mod tests {
         let mut board = Board::new();
         for perft in perft_list {
             board.parse_fen(&perft.fen).unwrap();
+            let start = Instant::now();
             let nodes = PerftPosition::perft(&mut board, perft.depth);
+            let elapsed = start.elapsed();
+            let nps = nodes as f64 / elapsed.as_secs_f64();
+            println!(
+                "fen: {}\ndepth: {}\nexpected nodes: {}\nrecieved nodes: {}\ntime taken: {:?}\nnps: {}\n",
+                perft.fen,
+                perft.depth,
+                perft.nodes,
+                nodes,
+                elapsed,
+                nps.trunc()
+            );
             assert_eq!(perft.nodes, nodes);
         }
     }
