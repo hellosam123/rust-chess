@@ -1,3 +1,6 @@
+use std::fmt;
+
+#[derive(Debug, Clone, Copy)]
 pub struct Move(u16);
 
 #[derive(Debug, PartialEq, Eq)]
@@ -18,6 +21,37 @@ pub enum MoveFlag {
     PromoteCaptureQ = 0b1111,
 }
 
+fn square_to_str(square: u8) -> String {
+    let rank = square / 8;
+    let file = square % 8;
+
+    let rank_char = (b'1' + rank) as char;
+    let file_char = (b'a' + file) as char;
+
+    format!("{}{}", file_char, rank_char)
+}
+
+impl fmt::Display for Move {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let from_str = square_to_str(self.get_from());
+        let to_str = square_to_str(self.get_to());
+        let mut promotion_str = String::with_capacity(1);
+
+        if self.is_promotion() {
+            match self.get_flag() {
+                MoveFlag::PromoteN | MoveFlag::PromoteCaptureN => promotion_str.push('n'),
+                MoveFlag::PromoteB | MoveFlag::PromoteCaptureB => promotion_str.push('b'),
+                MoveFlag::PromoteR | MoveFlag::PromoteCaptureR => promotion_str.push('r'),
+                MoveFlag::PromoteQ | MoveFlag::PromoteCaptureQ => promotion_str.push('q'),
+
+                _ => {}
+            }
+        }
+
+        write!(f, "{}{}{}", from_str, to_str, promotion_str)
+    }
+}
+
 impl Move {
     const FROM_MASK: u16 = 0x3F; // 0000 0000 0011 1111 (bits 0-5)
     const TO_MASK: u16 = 0xFC0; // 0000 1111 1100 0000 (bits 6-11)
@@ -25,7 +59,7 @@ impl Move {
 
     #[inline(always)]
     pub fn new(from: u8, to: u8, flag: MoveFlag) -> Self {
-        Move((from | to << 6 | (flag as u8) << 12) as u16)
+        Move(from as u16 | (to as u16) << 6 | (flag as u16) << 12)
     }
 
     #[inline(always)]
