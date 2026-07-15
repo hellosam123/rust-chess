@@ -1,7 +1,7 @@
 use crate::{
     attacks,
     bitboard::{self, CASTLING_PERMUTATIONS},
-    magic_bitboard::{self, get_rook_attacks_mask},
+    magic_bitboard,
     mv::{Move, MoveFlag},
     zobrist::ZOBRIST,
 };
@@ -914,7 +914,7 @@ impl Board {
 
             let sim_mask = self.all_pieces & !captured_pawn_mask & !(1 << from);
 
-            if them_sliders & get_rook_attacks_mask(sim_mask, king_square) != 0 {
+            if them_sliders & magic_bitboard::get_rook_attacks_mask(sim_mask, king_square) != 0 {
                 return false;
             }
 
