@@ -2,6 +2,7 @@ use crate::{
     attacks,
     bitboard::{self, CASTLING_PERMUTATIONS},
     magic_bitboard,
+    movegen::MoveGenerator,
     mv::{Move, MoveFlag},
     zobrist::ZOBRIST,
 };
@@ -394,6 +395,24 @@ impl Board {
         }
         println!("  +-----------------+");
         println!("    a b c d e f g h");
+    }
+
+    pub fn str_to_move(&self, s: &str) -> Option<Move> {
+        let move_list = MoveGenerator::generate_pseudo_legal_moves(self);
+        let pinned_mask = self.generate_pinned_mask();
+        let check_mask = self.generate_check_mask();
+        for i in 0..move_list.count {
+            let mv = move_list.moves[i];
+            if !self.is_legal(mv, pinned_mask, check_mask) {
+                continue;
+            }
+
+            if mv.to_string() == s {
+                return Some(mv);
+            }
+        }
+
+        None
     }
 
     fn generate_phase_value(&self) -> u8 {

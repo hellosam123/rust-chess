@@ -6,4 +6,5 @@ mod magic_bitboard;
 pub mod movegen;
 mod mv;
 mod search;
+pub mod uci;
 mod zobrist;
