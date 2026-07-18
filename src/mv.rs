@@ -1,6 +1,6 @@
 use std::fmt;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Move(u16);
 
 #[derive(Debug, PartialEq, Eq)]
@@ -103,7 +103,22 @@ impl Move {
     }
 
     #[inline(always)]
+    pub fn is_en_passant(&self) -> bool {
+        self.get_flag() == MoveFlag::EnPassant
+    }
+
+    #[inline(always)]
     pub fn is_promotion(&self) -> bool {
         self.0 & 8 << 12 != 0
+    }
+
+    #[inline(always)]
+    pub fn is_present(&self) -> bool {
+        !self.is_null()
+    }
+
+    #[inline(always)]
+    pub fn is_null(&self) -> bool {
+        self.0 == Self::NULL.0
     }
 }
