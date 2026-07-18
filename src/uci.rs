@@ -45,7 +45,7 @@ impl Default for Uci {
     fn default() -> Self {
         Self {
             board: Board::new(),
-            search: Search::new(),
+            search: Search::new(64),
         }
     }
 }

@@ -8,5 +8,6 @@ pub mod movegen;
 mod movepick;
 mod mv;
 mod search;
+mod transposition;
 pub mod uci;
 mod zobrist;

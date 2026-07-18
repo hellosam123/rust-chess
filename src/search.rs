@@ -11,6 +11,7 @@ use crate::{
     movegen::{MoveGenerator, MoveList},
     movepick::MovePicker,
     mv::Move,
+    transposition::{HashFlag, TranspositionTable, TtEntry},
 };
 
 pub struct PvTable {
@@ -20,11 +21,13 @@ pub struct PvTable {
 
 pub struct Search {
     nodes: u64,
+    age: u16,
     root_depth: u8,
     sel_depth: usize,
     start_time: Instant,
     max_move_time: Duration,
 
+    tt_table: TranspositionTable,
     pv_table: PvTable,
 
     is_aborted: AtomicBool,
@@ -73,13 +76,15 @@ impl PvTable {
 }
 
 impl Search {
-    pub fn new() -> Self {
+    pub fn new(tt_size_mb: usize) -> Self {
         Self {
             nodes: 0,
+            age: 0,
             root_depth: 0,
             sel_depth: 0,
             start_time: Instant::now(),
             max_move_time: Duration::ZERO,
+            tt_table: TranspositionTable::new(tt_size_mb),
             pv_table: PvTable::new(),
             is_aborted: AtomicBool::new(false),
         }
@@ -87,6 +92,7 @@ impl Search {
 
     pub fn clear(&mut self) {
         self.nodes = 0;
+        self.age += 1;
         self.root_depth = 0;
         self.sel_depth = 0;
         self.start_time = Instant::now();
@@ -213,7 +219,31 @@ impl Search {
             self.sel_depth = ply;
         }
 
+        if let Some(curr_tt_entry) = self.tt_table.read(board.hash_key)
+            && curr_tt_entry.get_depth() >= depth
+        {
+            let curr_score = curr_tt_entry.get_score(ply);
+            match curr_tt_entry.get_flag() {
+                HashFlag::Exact => {
+                    return curr_score;
+                }
+                HashFlag::Alpha => {
+                    if curr_score <= alpha {
+                        return curr_score;
+                    }
+                }
+                HashFlag::Beta => {
+                    if curr_score >= beta {
+                        return curr_score;
+                    }
+                }
+            }
+        }
+
         let mut best_score = -INFINITE;
+
+        let mut best_move = Move::NULL;
+        let mut tt_flag = HashFlag::Alpha;
 
         let pinned_mask = board.generate_pinned_mask();
         let check_mask = board.generate_check_mask();
@@ -235,21 +265,37 @@ impl Search {
 
             if score > best_score {
                 best_score = score;
+                best_move = mv;
 
                 if score > alpha {
                     alpha = score;
+                    tt_flag = HashFlag::Exact;
                     self.pv_table.store(ply, mv);
                 }
             }
 
             if score >= beta {
-                return best_score;
+                tt_flag = HashFlag::Beta;
+                best_score = score;
+                best_move = mv;
+                break;
             }
         }
 
         if best_score == -INFINITE {
-            return -CHECKMATE;
+            return -CHECKMATE + ply as i32;
         }
+
+        let tt_score = TtEntry::to_tt_score(best_score, ply);
+        let tt_entry = TtEntry::new(
+            board.hash_key,
+            best_move,
+            tt_score,
+            self.age,
+            depth,
+            tt_flag,
+        );
+        self.tt_table.write(tt_entry);
 
         best_score
     }
@@ -333,7 +379,7 @@ mod tests {
         let mut board = Board::new_starting_board().unwrap();
         board.print_board();
 
-        let mut search = Search::new();
+        let mut search = Search::new(64);
         let limits = SearchLimits {
             max_depth: Some(7),
             max_move_time: Some(Duration::MAX),
