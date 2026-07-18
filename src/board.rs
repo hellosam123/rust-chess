@@ -226,6 +226,18 @@ impl Piece {
             | Piece::BlackKing => Color::Black,
         }
     }
+
+    #[inline(always)]
+    pub fn get_value(&self) -> i32 {
+        match self {
+            Piece::WhitePawn | Piece::BlackPawn => 100,
+            Piece::WhiteKnight | Piece::BlackKnight => 300,
+            Piece::WhiteBishop | Piece::BlackBishop => 320,
+            Piece::WhiteRook | Piece::BlackRook => 500,
+            Piece::WhiteQueen | Piece::BlackQueen => 900,
+            Piece::WhiteKing | Piece::BlackKing => 1500,
+        }
+    }
 }
 
 impl Not for Color {
@@ -343,7 +355,7 @@ impl Board {
     }
 
     #[inline(always)]
-    fn get_piece(&self, square: u8) -> Option<Piece> {
+    pub fn get_piece(&self, square: u8) -> Option<Piece> {
         self.mailbox[square as usize]
     }
 
