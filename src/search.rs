@@ -1,20 +1,17 @@
 use std::{
     hash::{BuildHasher, Hasher, RandomState},
-    thread::current,
+    sync::atomic::{AtomicBool, Ordering},
     time::{Duration, Instant},
 };
 
 use crate::{
     board::Board,
+    constants::{CHECKMATE, INFINITE, MAX_DEPTH},
     evaluate::Evaluate,
     movegen::{MoveGenerator, MoveList},
+    movepick::MovePicker,
     mv::Move,
 };
-
-pub const INFINITE: i32 = 32000;
-pub const CHECKMATE: i32 = 30000;
-
-pub const MAX_DEPTH: usize = 64;
 
 pub struct PvTable {
     table: [Move; MAX_DEPTH * MAX_DEPTH],
@@ -29,20 +26,13 @@ pub struct Search {
     max_move_time: Duration,
 
     pv_table: PvTable,
+
+    is_aborted: AtomicBool,
 }
 
 pub struct SearchLimits {
     pub max_depth: Option<u8>,
     pub max_move_time: Option<Duration>,
-}
-
-#[derive(Debug)]
-struct SearchResult {
-    mv: Move,
-    score: i32,
-    nodes: u64,
-    depth: u8,
-    elapsed: Duration,
 }
 
 impl PvTable {
@@ -91,7 +81,18 @@ impl Search {
             start_time: Instant::now(),
             max_move_time: Duration::ZERO,
             pv_table: PvTable::new(),
+            is_aborted: AtomicBool::new(false),
         }
+    }
+
+    pub fn clear(&mut self) {
+        self.nodes = 0;
+        self.root_depth = 0;
+        self.sel_depth = 0;
+        self.start_time = Instant::now();
+        self.max_move_time = Duration::ZERO;
+        self.pv_table.clear();
+        self.is_aborted.store(false, Ordering::Relaxed);
     }
 
     fn random(board: Board) -> Move {
@@ -119,9 +120,7 @@ impl Search {
 
         let max_root_depth = limits.max_depth.unwrap_or(20);
 
-        let mut final_best_score = -INFINITE;
-
-        let move_list = MoveGenerator::generate_pseudo_legal_moves(board);
+        let mut best_move = Move::NULL;
 
         let pinned_mask = board.generate_pinned_mask();
         let check_mask = board.generate_check_mask();
@@ -130,11 +129,13 @@ impl Search {
             self.root_depth = current_depth;
             self.pv_table.clear();
 
-            let alpha = -INFINITE;
+            let mut alpha = -INFINITE;
             let beta = INFINITE;
 
-            for i in 0..move_list.count {
-                let mv = move_list.moves[i];
+            let mut best_score = -INFINITE;
+
+            let mut move_picker = MovePicker::new(best_move);
+            while let Some(mv) = move_picker.next(self, board) {
                 if !board.is_legal(mv, pinned_mask, check_mask) {
                     continue;
                 }
@@ -146,17 +147,30 @@ impl Search {
 
                 self.nodes += 1;
 
-                if score > alpha {
-                    final_best_score = score;
-                    self.pv_table.store(0, mv);
+                if self.is_aborted.load(Ordering::Relaxed) {
+                    break;
+                }
+
+                if score > best_score {
+                    best_score = score;
+
+                    if score > alpha {
+                        alpha = score;
+                        self.pv_table.store(0, mv);
+                    }
                 }
             }
 
-            if final_best_score == -INFINITE {
-                final_best_score = -CHECKMATE;
+            if self.is_aborted.load(Ordering::Relaxed) {
+                break;
+            }
+
+            if best_score == -INFINITE {
+                best_score = -CHECKMATE;
             }
 
             let pv = self.pv_table.get_pv();
+            best_move = pv[0];
             let mut pv_str = String::with_capacity(pv.len() * 6);
             for mv in pv {
                 pv_str.push_str(&mv.to_string());
@@ -172,9 +186,11 @@ impl Search {
 
             println!(
                 "info depth {} seldepth {} score cp {} nodes {} nps {} time {} pv {}",
-                current_depth, self.sel_depth, final_best_score, self.nodes, nps, elapsed, pv_str
+                current_depth, self.sel_depth, best_score, self.nodes, nps, elapsed, pv_str
             );
         }
+
+        println!("bestmove {}", best_move);
     }
 
     fn alpha_beta_search(
@@ -189,18 +205,21 @@ impl Search {
             return Self::quiescence_search(self, board, alpha, beta, ply);
         }
 
+        if self.is_aborted.load(Ordering::Relaxed) {
+            return 0;
+        }
+
         if ply > self.sel_depth {
             self.sel_depth = ply;
         }
 
         let mut best_score = -INFINITE;
 
-        let move_list = MoveGenerator::generate_pseudo_legal_moves(board);
-
         let pinned_mask = board.generate_pinned_mask();
         let check_mask = board.generate_check_mask();
-        for i in 0..move_list.count {
-            let mv = move_list.moves[i];
+
+        let mut move_picker = MovePicker::new(Move::NULL);
+        while let Some(mv) = move_picker.next(self, board) {
             if !board.is_legal(mv, pinned_mask, check_mask) {
                 continue;
             }
@@ -210,6 +229,9 @@ impl Search {
             board.unmake_move(mv, unmove);
 
             self.nodes += 1;
+            if self.nodes.is_multiple_of(2048) && self.start_time.elapsed() > self.max_move_time {
+                self.is_aborted.store(true, Ordering::Relaxed);
+            }
 
             if score > best_score {
                 best_score = score;
