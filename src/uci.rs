@@ -10,6 +10,7 @@ use crate::{
 
 pub struct Uci {
     board: Board,
+    search: Search,
 }
 
 struct SearchParams {
@@ -44,6 +45,7 @@ impl Default for Uci {
     fn default() -> Self {
         Self {
             board: Board::new(),
+            search: Search::new(),
         }
     }
 }
@@ -145,7 +147,7 @@ impl Uci {
         }
     }
 
-    fn handle_go(&self, mut args: &[&str]) {
+    fn handle_go(&mut self, mut args: &[&str]) {
         let mut search_params = SearchParams::new();
         while !args.is_empty() {
             match args {
@@ -232,10 +234,12 @@ impl Uci {
             move_time = Some(Duration::MAX);
         }
 
-        let mut search = Search::new();
         let limits = SearchLimits {
             max_depth: search_params.depth,
             max_move_time: move_time,
         };
+
+        self.search.clear();
+        self.search.root_search(&mut self.board, limits);
     }
 }
