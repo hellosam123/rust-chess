@@ -1,13 +1,14 @@
 use crate::{
     attacks, bitboard,
     board::{Board, CastlingRights, Color, Piece, Square},
+    constants::MAX_MOVES,
     magic_bitboard,
     mv::{Move, MoveFlag},
 };
 
 #[derive(Debug)]
 pub struct MoveList {
-    pub moves: [Move; 256],
+    pub moves: [Move; MAX_MOVES],
     pub count: usize,
 }
 
@@ -16,7 +17,7 @@ pub struct MoveGenerator;
 impl Default for MoveList {
     fn default() -> Self {
         Self {
-            moves: [Move::NULL; 256],
+            moves: [Move::NULL; MAX_MOVES],
             count: 0,
         }
     }

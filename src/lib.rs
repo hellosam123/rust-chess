@@ -1,9 +1,11 @@
 mod attacks;
 mod bitboard;
 pub mod board;
+mod constants;
 mod evaluate;
 mod magic_bitboard;
 pub mod movegen;
+mod movepick;
 mod mv;
 mod search;
 pub mod uci;
