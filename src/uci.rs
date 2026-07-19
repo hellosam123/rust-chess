@@ -70,7 +70,7 @@ impl Uci {
 
         match args.as_slice() {
             ["uci"] => {
-                println!("id name rust-chess 1.0");
+                println!("id name razor 0.1.0");
                 println!("id author isfsam");
                 println!("uciok");
             }

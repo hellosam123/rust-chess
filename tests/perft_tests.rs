@@ -1,4 +1,4 @@
-use rust_chess::{board::Board, movegen::MoveGenerator};
+use razor::{board::Board, movegen::MoveGenerator};
 
 struct PerftPosition {
     fen: String,
