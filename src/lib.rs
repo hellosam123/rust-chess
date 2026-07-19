@@ -7,6 +7,7 @@ mod magic_bitboard;
 pub mod movegen;
 mod movepick;
 mod mv;
+mod params;
 mod search;
 mod transposition;
 pub mod uci;
