@@ -1,7 +1,4 @@
-use crate::{
-    constants::{CHECKMATE, CHECKMATE_THRESHOLD},
-    mv::Move,
-};
+use crate::{constants::CHECKMATE_THRESHOLD, mv::Move};
 
 pub struct TranspositionTable {
     entry_list: Vec<TtEntry>,
