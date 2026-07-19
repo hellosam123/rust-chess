@@ -1,4 +1,4 @@
-use rust_chess::uci::Uci;
+use razor::uci::Uci;
 
 fn main() {
     let mut uci = Uci::new();
