@@ -1,2 +1,2 @@
-# rust-chess
+# Razor
 A chess engine written in Rust
